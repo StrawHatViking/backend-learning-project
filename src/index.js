@@ -1,62 +1,34 @@
-import express from "express"
-import dotenv from "dotenv"
+import express from "express";
+import dotenv from "dotenv";
 import connectDB from "./db/database.connect.js";
 
-dotenv.config()
+dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 const app = express();
 
-connectDB()
+app.use(express.json()); // For JSON APIs
 
-app.get('/',(req,res)=>{
-    res.send("hey")
+(async () => {
+  try {
+    await connectDB(); // Await DB connection
+    const server = app.listen(PORT, () => {
+      console.log(`App Listening at Port: ${PORT}`);
+    });
+
+    server.on("error", (error) => {
+      console.error("Server Error:", error);
+      process.exit(1);
+    });
+  } catch (error) {
+    console.error("Startup Error:", error);
+    process.exit(1);
+  }
+})();
+
+app.get("/", (req, res) => {
+  res.send("hey");
 });
-
-app.listen(PORT, ()=>{
-    console.log(`App Listening at Port: ${PORT}`)
-})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -101,4 +73,3 @@ app.listen(PORT, ()=>{
         }
     })()
         */
-       
