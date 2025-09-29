@@ -6,14 +6,19 @@ import ApiResponse from "../utils/apiResponse.js";
 import jwt from "jsonwebtoken"
 
 const generateAccessAndRefreshToken = async (userId) => {
-    const user = await User.findById(userId)
-    const accessToken = user.generateAccessToken()
-    const refreshToken = user.generateRefreshToken()
-
-    user.refreshToken = refreshToken
-    await user.save({ validateBeforeSave: false })
-
-    return { accessToken, refreshToken }
+  try {
+      const user = await User.findById(userId)
+      const accessToken = user.generateAccessToken()
+      const refreshToken = user.generateRefreshToken()
+  
+      user.refreshToken = refreshToken
+      await user.save({ validateBeforeSave: false })
+  
+      return { refreshToken, accessToken }
+  }
+   catch (error) {
+    throw new ApiError(500, "Token generation failed")
+  }
 }
 
 const registerUser = asyncHandler(async (req, res) => {
@@ -163,10 +168,10 @@ const logoutUser = asyncHandler(async (req, res) => {
 const refreshAccessToken = asyncHandler(async (req, res) => {
     const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
     if (!incomingRefreshToken)
-        throw new ApiError(401, "Invalid refresh Token")
+        throw new ApiError(401, "Refresh Token required")
 
     console.log(incomingRefreshToken)
-    const decodedToken = jwt.verify(incomingRefreshToken, REFRESH_TOKEN_SECRET)
+    const decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
     console.log(decodedToken)
 
     const user = await User.findById(decodedToken?._id)
@@ -174,29 +179,35 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         throw new ApiError(401, "Invalid refresh token")
 
     if (incomingRefreshToken !== user?.refreshToken)
-        throw new ApiError(401, "Refresh Token expired") //sending this error message because if user doesn't contain refresh token that means refresh token has been expired
+        throw new ApiError(401, "Invalid refresh Token") //sending this error message because if user doesn't contain refresh token that means refresh token has been expired
 
-    const { newRefreshToken, accessToken } = generateAccessAndRefreshToken(user._id)
+    const { refreshToken, accessToken } = await generateAccessAndRefreshToken(user._id)
+    if (!accessToken || !refreshToken) {
+        throw new ApiError(500, "Failed to generate tokens");
+    }
 
-    console.log(`refresh token :${newRefreshToken} , access token: ${accessToken}`)
+    // console.log(`refresh token :${refreshToken} , access token: ${accessToken}`)
 
     const options = {
         httpOnly: true,
         secure: true
     }
-
+ 
     res
         .status(200)
-        .cookie("accessToken", accessToken, options)
-        .cookie("refreshToken", newRefreshToken, options)
+        .cookie("accessToken",accessToken,options)
+        .cookie("refreshToken", refreshToken, options)
         .json(
             new ApiResponse(200, "refresh token generated successfully",
-                { newRefreshToken, accessToken }
+                {
+                    refreshToken,
+                    accessToken
+                }
             )
         )
-
-
 })
+
+
 
 export {
     registerUser,
