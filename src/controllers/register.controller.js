@@ -4,6 +4,17 @@ import asyncHandler from "../utils/asyncHandler.js";
 import uploadOnCloudinary from "../utils/coudinary.js";
 import ApiResponse from "../utils/apiResponse.js";
 
+const generateAccessAndRefreshToken = async (userId) => {
+    const user = await User.findById(userId)
+    const accessToken = user.generateAccessToken()
+    const refreshToken = user.generateRefreshToken()
+
+    user.refreshToken = refreshToken
+    await user.save({ validateBeforeSave: false })
+
+    return { accessToken, refreshToken }
+}
+
 const registerUser = asyncHandler(async (req, res) => {
     // get user details from frontend
     // validation - check if details are empty
@@ -17,7 +28,7 @@ const registerUser = asyncHandler(async (req, res) => {
     // console.log("fullname:"+fullname+"email:"+email + "username: " +username+ "pasword:"+password)
 
     if (
-        [email, password, username, fullname].some((field) => (field||"").trim() === "")) {
+        [email, password, username, fullname].some((field) => (field || "").trim() === "")) {
         throw new ApiError(400, "Details cannot be empty")
     }
 
@@ -69,4 +80,87 @@ const registerUser = asyncHandler(async (req, res) => {
     )
 
 })
-export default registerUser
+
+const loginUser = asyncHandler(async (req, res) => {
+    // req.body -> data
+    const { username, password, email } = req.body
+
+    // check username or email
+    if (!username && !email) {
+        throw new ApiError(400, "Username or email required !!")
+    }
+    if (username && email) {
+        throw new ApiError(400, "Provide either username or email,not both")
+    }
+
+    // find user
+    const user = await User.findOne(username?{username:username.toLowerCase()}:{email:email.toLowerCase()})
+    
+    if(!user)
+        throw new ApiError(401,"wrong user credentials")
+
+    const isPasswordValid = await user.isPasswordCorrect(password)
+    if (!isPasswordValid)
+        throw new ApiError(401, "Wrong user credentials")
+
+    const { refreshToken, accessToken } = await generateAccessAndRefreshToken(user._id)
+
+    // const loggedInUser = User.findById(user._id).select("-password -refreshToken") //this basically means give all the data of the user in loggedInUser except password and refresh Token
+
+    const loggedInUser = user.toObject();
+    delete loggedInUser.password;
+    delete loggedInUser.refreshToken;
+
+    const options = ({
+        httpOnly: true,
+        secure: true
+    })
+
+    res
+        .status(200)
+        .cookie("refreshToken", refreshToken, options)
+        .cookie("accessToken", accessToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                "User successfully logged in !",
+                {
+                    user: loggedInUser, accessToken, refreshToken
+                }
+            )
+        )
+})
+
+const logoutUser = asyncHandler(async (req, res) => {
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                refreshToken: undefined
+            },
+        },
+        {
+            new: true
+        }
+    )
+
+    console.log(user)
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(
+            new ApiResponse(200, "User logged out successfully", {})
+        )
+})
+
+export {
+    registerUser,
+    loginUser,
+    logoutUser
+}
